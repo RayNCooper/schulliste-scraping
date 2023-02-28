@@ -1,0 +1,7 @@
+{
+  "name": "schulliste-scraping",
+  "version": "1.0.0",
+  "description": "a simple script to scrape all schools listed at schulliste.eu/",
+  "main": "index.js",
+  "license": "MIT"
+}
