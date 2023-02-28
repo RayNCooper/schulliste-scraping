@@ -7,8 +7,9 @@ const { stringify } = require('csv-stringify');
 
 const baseUrl = "http://www.schulliste.eu/type/"
 const schoolTypes = [
-    "hauptschulen",
+    "gesamtschulen",
 ];
+const pageCount = 32;
 
 (async () => {
     /* Iterate over each school type described above */
@@ -16,7 +17,8 @@ const schoolTypes = [
         try {
             const schools = []
             /* Iterate over every available page */
-            for (let pageIndex = 0; pageIndex < 1000000; pageIndex++) {
+            for (let pageIndex = 0; pageIndex < pageCount; pageIndex++) {
+                console.log("Scraping Page #" + (pageIndex + 1) + " - " + "∑ " + (pageIndex + 1) * 20 + " Schools")
 
                 let url = baseUrl + schoolType + '/'
                 if (pageIndex > 0) url += `?bundesland=&start=${20 * pageIndex}`
@@ -43,48 +45,48 @@ const schoolTypes = [
                     })
 
                     const detailedSchoolsObj = await simpleSchoolsObj.map(async (school) => {
-                        const res = await fetch(school.url)
-                        const html = await res.text()
-                        const dom = new JSDOM(html)
+                        try {
+                            const res = await fetch(school.url)
+                            const html = await res.text()
+                            const dom = new JSDOM(html)
 
-                        const addressContainer = dom.window.document.querySelector("[itemprop=address]")
-                        const street = addressContainer.querySelectorAll("span").item(0).innerHTML
-                        const zipCode = addressContainer.querySelectorAll("span").item(1).innerHTML
-                        
-                        const city = addressContainer.querySelectorAll("span").item(2).innerHTML
+                            const addressContainer = dom.window.document.querySelector("[itemprop=address]")
+                            const street = addressContainer.querySelectorAll("span").item(0).innerHTML
+                            const zipCode = addressContainer.querySelectorAll("span").item(1).innerHTML
 
-                        const mailContainerHtml = dom.window.document.querySelector(".my_modal_open").innerHTML
-                        const mail = mailContainerHtml.replace(/.(img.+>)/, "@")
+                            const city = addressContainer.querySelectorAll("span").item(2).innerHTML
 
-                        const phone = dom.window.document.querySelector("[itemprop=telephone]").textContent
-               
-                        return {
-                            ...school,
-                            street,
-                            zipCode,
-                            city,
-                            mail,
-                            phone
+                            const mailContainerHtml = dom.window.document.querySelector(".my_modal_open")
+                            const mail = mailContainerHtml ? mailContainerHtml.innerHTML.replace(/.(img.+>)/, "@") : ""
+
+                            const phoneContainer = dom.window.document.querySelector("[itemprop=telephone]")
+                            const phone = phoneContainer ? phoneContainer.textContent : ""
+
+                            return {
+                                ...school,
+                                street,
+                                zipCode,
+                                city,
+                                mail,
+                                phone
+                            }
+                        } catch (error) {
+                            console.log("Error while fetching single School: " + school.name + ", " + school.url + " - " + error)
                         }
+
                     })
                     schools.push(...await Promise.all(detailedSchoolsObj))
-                } catch (e) {
-                    console.log(schools)
-                    console.log("End of Pages on Page #" + (pageIndex + 1))
+
                     stringify(schools, {
                         header: true
                     }, function (err, output) {
-                        console.log(err)
-                        fs.writeFile('hauptschulen.csv', output, {}, () => true);
+                        err && console.log(err)
+                        fs.writeFile(`${schoolType}.csv`, output, {}, () => true);
                     })
+                } catch (e) {
+                    console.log("Error while fetching on Page #" + (pageIndex + 1) + " " + error)
                 }
             }
-            stringify(schools, {
-                header: true
-            }, function (err, output) {
-                console.log(err)
-                fs.writeFile('hauptschulen.csv', output, {}, () => true);
-            })
         } catch (error) {
             console.log(error)
         }
