@@ -1,67 +1,94 @@
 const fetch = require('node-fetch');
 const jsdom = require("jsdom");
+const { JSDOM } = jsdom;
+
 const fs = require('fs')
+const { stringify } = require('csv-stringify');
 
 const baseUrl = "http://www.schulliste.eu/type/"
 const schoolTypes = [
     "hauptschulen",
-]
-
-const { JSDOM } = jsdom;
+];
 
 (async () => {
+    /* Iterate over each school type described above */
     await schoolTypes.forEach(async (schoolType) => {
         try {
-            const res = await fetch(baseUrl + schoolType + '/')
-            const html = await res.text()
-            console.log(html)
-            console.log(schoolType)
+            const schools = []
+            /* Iterate over every available page */
+            for (let pageIndex = 0; pageIndex < 1000000; pageIndex++) {
 
-            const dom = new JSDOM(html)
+                let url = baseUrl + schoolType + '/'
+                if (pageIndex > 0) url += `?bundesland=&start=${20 * pageIndex}`
 
-            const schoolDivArr = dom.window.document.querySelectorAll(".doc_entry")
+                try {
+                    const res = await fetch(url)
+                    const html = await res.text()
 
-            const simpleSchoolsObj = []
-            schoolDivArr.forEach((schoolDiv, i) => {
-                const descriptionDiv = schoolDiv.getElementsByClassName("doc_entry_desc").item(0)
-                const nameDiv = descriptionDiv.getElementsByClassName("school_name").item(0)
+                    const dom = new JSDOM(html)
 
-                const schoolViewHref = nameDiv.getElementsByClassName("red").item(0).getAttribute("href")
+                    const schoolDivArr = dom.window.document.querySelectorAll(".doc_entry")
 
-                simpleSchoolsObj.push({
-                    name: nameDiv.textContent,
-                    url: schoolViewHref
-                })
-            })
+                    const simpleSchoolsObj = []
+                    schoolDivArr.forEach((schoolDiv, i) => {
+                        const descriptionDiv = schoolDiv.getElementsByClassName("doc_entry_desc").item(0)
+                        const nameDiv = descriptionDiv.getElementsByClassName("school_name").item(0)
 
-            const detailedSchoolsObj = await simpleSchoolsObj.map(async (school) => {
-                const res = await fetch(school.url)
-                const html = await res.text()
-                const dom = new JSDOM(html)
+                        const schoolViewHref = nameDiv.getElementsByClassName("red").item(0).getAttribute("href")
 
-                const addressContainer = dom.window.document.querySelector("[itemprop=address]")
-                const street = addressContainer.querySelectorAll("span").item(0).innerHTML
-                const zip = addressContainer.querySelectorAll("span").item(1).innerHTML
-                const city = addressContainer.querySelectorAll("span").item(2).innerHTML
+                        simpleSchoolsObj.push({
+                            name: nameDiv.textContent,
+                            url: schoolViewHref
+                        })
+                    })
 
-                const mailContainerHtml = dom.window.document.querySelector(".my_modal_open").innerHTML
-                const mail = mailContainerHtml.replace(/.(img.+>)/, "@")
+                    const detailedSchoolsObj = await simpleSchoolsObj.map(async (school) => {
+                        const res = await fetch(school.url)
+                        const html = await res.text()
+                        const dom = new JSDOM(html)
 
-                const phone = dom.window.document.querySelector("[itemprop=telephone]").textContent
+                        const addressContainer = dom.window.document.querySelector("[itemprop=address]")
+                        const street = addressContainer.querySelectorAll("span").item(0).innerHTML
+                        const zipCode = addressContainer.querySelectorAll("span").item(1).innerHTML
+                        
+                        const city = addressContainer.querySelectorAll("span").item(2).innerHTML
 
-                return {
-                    ...school,
-                    street,
-                    zip,
-                    city,
-                    mail,
-                    phone
+                        const mailContainerHtml = dom.window.document.querySelector(".my_modal_open").innerHTML
+                        const mail = mailContainerHtml.replace(/.(img.+>)/, "@")
+
+                        const phone = dom.window.document.querySelector("[itemprop=telephone]").textContent
+               
+                        return {
+                            ...school,
+                            street,
+                            zipCode,
+                            city,
+                            mail,
+                            phone
+                        }
+                    })
+                    schools.push(...await Promise.all(detailedSchoolsObj))
+                } catch (e) {
+                    console.log(schools)
+                    console.log("End of Pages on Page #" + (pageIndex + 1))
+                    stringify(schools, {
+                        header: true
+                    }, function (err, output) {
+                        console.log(err)
+                        fs.writeFile('hauptschulen.csv', output, {}, () => true);
+                    })
                 }
+            }
+            stringify(schools, {
+                header: true
+            }, function (err, output) {
+                console.log(err)
+                fs.writeFile('hauptschulen.csv', output, {}, () => true);
             })
-            console.log(await Promise.all(detailedSchoolsObj))
-        } catch (e) {
-            console.log(e)
+        } catch (error) {
+            console.log(error)
         }
+
     })
 
 })();
